@@ -12,7 +12,18 @@ android {
         minSdk = 24 // dispatchGesture() exige API 24+
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
+    }
+
+    // Keystore fixa: todas as builds (inclusive as do GitHub Actions) usam a mesma
+    // assinatura, então dá para instalar uma versão nova por cima da anterior.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
