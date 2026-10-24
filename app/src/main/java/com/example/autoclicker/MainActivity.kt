@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
@@ -77,6 +78,11 @@ class MainActivity : Activity() {
             setOnClickListener { showControls() }
         }
 
+        val resetBtn = Button(this).apply {
+            text = "Redefinir posições salvas"
+            setOnClickListener { resetPositions() }
+        }
+
         val help = TextView(this).apply {
             text = "Como usar: arraste os círculos numerados até os pontos que devem ser " +
                 "clicados (use + e − no painel para adicionar ou remover alvos), abra o jogo e " +
@@ -89,9 +95,22 @@ class MainActivity : Activity() {
             status, enableBtn, showBtn,
             intervalsLabel, intervalsInput,
             limitsLabel, maxClicksInput, maxMinutesInput,
-            saveBtn, help
+            saveBtn, resetBtn, help
         ).forEach { root.addView(it) }
-        setContentView(root)
+        // ScrollView: a tela já é longa e cresce a cada funcionalidade nova.
+        setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    /** Esquece as posições dos alvos e do painel; se os controles estiverem na tela, recria no padrão. */
+    private fun resetPositions() {
+        Prefs.clearPositions(this)
+        AutoClickService.instance?.let { service ->
+            if (service.isOverlayVisible()) {
+                service.hideOverlay()
+                service.showOverlay()
+            }
+        }
+        toast("Posições redefinidas")
     }
 
     override fun onResume() {

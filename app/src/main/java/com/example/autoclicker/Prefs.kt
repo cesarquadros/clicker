@@ -9,6 +9,8 @@ object Prefs {
     private const val KEY_INTERVAL_LEGACY = "interval_ms"
     private const val KEY_MAX_CLICKS = "max_clicks"
     private const val KEY_MAX_MINUTES = "max_minutes"
+    private const val KEY_TARGETS = "target_positions"
+    private const val KEY_PANEL = "panel_position"
 
     const val DEFAULT_INTERVAL_MS = 100L
     const val MIN_INTERVAL_MS = 20L
@@ -48,6 +50,48 @@ object Prefs {
             .putLong(KEY_MAX_CLICKS, maxClicks.coerceAtLeast(0L))
             .putLong(KEY_MAX_MINUTES, maxMinutes.coerceAtLeast(0L))
             .apply()
+    }
+
+    // ------------------------------------------------------------ posições salvas
+
+    /**
+     * Posições (x, y) dos alvos, na ordem. Formato salvo: "T,x,y;T,x,y".
+     * O prefixo "T" (toque) deixa espaço para outros tipos de alvo no futuro.
+     */
+    fun getTargetPositions(ctx: Context): List<Pair<Int, Int>> {
+        val raw = prefs(ctx).getString(KEY_TARGETS, "") ?: ""
+        return raw.split(';').mapNotNull { item ->
+            val p = item.split(',')
+            if (p.size == 3 && p[0] == "T") {
+                val x = p[1].toIntOrNull()
+                val y = p[2].toIntOrNull()
+                if (x != null && y != null) x to y else null
+            } else {
+                null
+            }
+        }
+    }
+
+    fun setTargetPositions(ctx: Context, positions: List<Pair<Int, Int>>) {
+        val raw = positions.joinToString(";") { "T,${it.first},${it.second}" }
+        prefs(ctx).edit().putString(KEY_TARGETS, raw).apply()
+    }
+
+    fun getPanelPosition(ctx: Context): Pair<Int, Int>? {
+        val p = (prefs(ctx).getString(KEY_PANEL, null) ?: return null).split(',')
+        if (p.size != 2) return null
+        val x = p[0].toIntOrNull() ?: return null
+        val y = p[1].toIntOrNull() ?: return null
+        return x to y
+    }
+
+    fun setPanelPosition(ctx: Context, x: Int, y: Int) {
+        prefs(ctx).edit().putString(KEY_PANEL, "$x,$y").apply()
+    }
+
+    /** Esquece as posições salvas (alvos e painel). */
+    fun clearPositions(ctx: Context) {
+        prefs(ctx).edit().remove(KEY_TARGETS).remove(KEY_PANEL).apply()
     }
 
     /** Intervalo do alvo de posição [index]; alvos além da lista usam o último valor. */

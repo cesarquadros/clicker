@@ -81,8 +81,24 @@ class AutoClickService : AccessibilityService() {
 
     fun showOverlay() {
         if (panel != null || !::wm.isInitialized) return
-        addTarget()
+        // Restaura os alvos salvos; sem nada salvo, começa com um alvo no centro.
+        val saved = Prefs.getTargetPositions(this)
+        if (saved.isEmpty()) {
+            addTarget()
+        } else {
+            saved.take(MAX_TARGETS).forEach { addTarget(it) }
+        }
         showPanel()
+    }
+
+    private fun savePositions() {
+        Prefs.setTargetPositions(this, targets.map { it.params.x to it.params.y })
+    }
+
+    private fun savePanelPosition() {
+        val p = panel ?: return
+        val lp = p.layoutParams as? WindowManager.LayoutParams ?: return
+        Prefs.setPanelPosition(this, lp.x, lp.y)
     }
 
     fun hideOverlay() {
@@ -108,7 +124,8 @@ class AutoClickService : AccessibilityService() {
             this.y = y
         }
 
-    private fun addTarget() {
+    /** Adiciona um alvo; [saved] é a posição (x, y) guardada, ou null para a posição padrão. */
+    private fun addTarget(saved: Pair<Int, Int>? = null) {
         if (targets.size >= MAX_TARGETS) {
             toast("Máximo de $MAX_TARGETS alvos")
             return
@@ -130,12 +147,13 @@ class AutoClickService : AccessibilityService() {
             }
         }
         val dm = resources.displayMetrics
-        val params = overlayParams(
-            size, size,
-            dm.widthPixels / 2 - size / 2,
-            dm.heightPixels / 3 + index * dp(64)
-        )
-        attachDrag(view, params)
+        // Mantém o alvo dentro da tela, caso a resolução/orientação tenha mudado.
+        val x = saved?.first?.coerceIn(0, (dm.widthPixels - size).coerceAtLeast(0))
+            ?: (dm.widthPixels / 2 - size / 2)
+        val y = saved?.second?.coerceIn(0, (dm.heightPixels - size).coerceAtLeast(0))
+            ?: (dm.heightPixels / 3 + index * dp(64))
+        val params = overlayParams(size, size, x, y)
+        attachDrag(view, params, onDragEnd = { savePositions() })
         wm.addView(view, params)
         targets.add(Target(view, params))
     }
@@ -148,6 +166,7 @@ class AutoClickService : AccessibilityService() {
         if (targets.size <= 1) return
         val last = targets.removeAt(targets.lastIndex)
         runCatching { wm.removeView(last.view) }
+        savePositions()
     }
 
     private fun showPanel() {
@@ -179,15 +198,23 @@ class AutoClickService : AccessibilityService() {
 
         listOf(handle, play, add, remove, close).forEach { bar.addView(it) }
 
+        val dm = resources.displayMetrics
+        val savedPanel = Prefs.getPanelPosition(this)
         val params = overlayParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            dp(12), dp(120)
+            savedPanel?.first?.coerceIn(0, (dm.widthPixels - dp(44)).coerceAtLeast(0)) ?: dp(12),
+            savedPanel?.second?.coerceIn(0, (dm.heightPixels - dp(44)).coerceAtLeast(0)) ?: dp(120)
         )
-        attachDrag(handle, params, moved = bar)
+        attachDrag(handle, params, moved = bar, onDragEnd = { savePanelPosition() })
         play.setOnClickListener { if (running) stopClicking() else startClicking() }
         add.setOnClickListener {
-            if (running) toast("Pause antes de adicionar alvos") else addTarget()
+            if (running) {
+                toast("Pause antes de adicionar alvos")
+            } else {
+                addTarget()
+                savePositions()
+            }
         }
         remove.setOnClickListener { removeLastTarget() }
         close.setOnClickListener { hideOverlay() }
@@ -203,7 +230,8 @@ class AutoClickService : AccessibilityService() {
     private fun attachDrag(
         handle: View,
         params: WindowManager.LayoutParams,
-        moved: View = handle
+        moved: View = handle,
+        onDragEnd: (() -> Unit)? = null
     ) {
         var startX = 0
         var startY = 0
@@ -233,7 +261,10 @@ class AutoClickService : AccessibilityService() {
                     }
                     true
                 }
-                MotionEvent.ACTION_UP -> true
+                MotionEvent.ACTION_UP -> {
+                    if (dragged) onDragEnd?.invoke()
+                    true
+                }
                 else -> false
             }
         }
