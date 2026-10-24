@@ -17,6 +17,8 @@ class MainActivity : Activity() {
 
     private lateinit var status: TextView
     private lateinit var intervalsInput: EditText
+    private lateinit var maxClicksInput: EditText
+    private lateinit var maxMinutesInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,9 +44,28 @@ class MainActivity : Activity() {
             setText(Prefs.getIntervalsText(this@MainActivity))
             gravity = Gravity.START
         }
+
+        val limitsLabel = TextView(this).apply {
+            text = "Parar automaticamente (0 = sem limite). Vale o que acontecer primeiro."
+            textSize = 14f
+            setPadding(0, pad, 0, 0)
+        }
+        maxClicksInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            hint = "Parar após quantos cliques"
+            val v = Prefs.getMaxClicks(this@MainActivity)
+            if (v > 0) setText(v.toString())
+        }
+        maxMinutesInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            hint = "Parar após quantos minutos"
+            val v = Prefs.getMaxMinutes(this@MainActivity)
+            if (v > 0) setText(v.toString())
+        }
+
         val saveBtn = Button(this).apply {
-            text = "Salvar intervalos"
-            setOnClickListener { saveIntervals() }
+            text = "Salvar configurações"
+            setOnClickListener { saveSettings() }
         }
 
         val enableBtn = Button(this).apply {
@@ -64,8 +85,12 @@ class MainActivity : Activity() {
             setPadding(0, pad, 0, 0)
         }
 
-        listOf(status, enableBtn, showBtn, intervalsLabel, intervalsInput, saveBtn, help)
-            .forEach { root.addView(it) }
+        listOf(
+            status, enableBtn, showBtn,
+            intervalsLabel, intervalsInput,
+            limitsLabel, maxClicksInput, maxMinutesInput,
+            saveBtn, help
+        ).forEach { root.addView(it) }
         setContentView(root)
     }
 
@@ -80,14 +105,22 @@ class MainActivity : Activity() {
     }
 
     /** Valida e salva. Retorna false (com aviso) se o texto for inválido. */
-    private fun saveIntervals(): Boolean {
+    private fun saveSettings(): Boolean {
         val text = intervalsInput.text.toString()
         if (Prefs.parseIntervals(text) == null) {
             toast("Use números separados por vírgula, cada um a partir de ${Prefs.MIN_INTERVAL_MS} ms")
             return false
         }
+        // Campo vazio = 0 = sem limite.
+        val maxClicks = maxClicksInput.text.toString().trim().ifEmpty { "0" }.toLongOrNull()
+        val maxMinutes = maxMinutesInput.text.toString().trim().ifEmpty { "0" }.toLongOrNull()
+        if (maxClicks == null || maxMinutes == null) {
+            toast("Os limites devem ser números inteiros")
+            return false
+        }
         Prefs.setIntervalsText(this, text)
-        toast("Intervalos salvos")
+        Prefs.setLimits(this, maxClicks, maxMinutes)
+        toast("Configurações salvas")
         return true
     }
 
@@ -97,7 +130,7 @@ class MainActivity : Activity() {
             toast("Ative o serviço de acessibilidade primeiro")
             return
         }
-        if (!saveIntervals()) return
+        if (!saveSettings()) return
         service.showOverlay()
         moveTaskToBack(true)
     }

@@ -47,6 +47,14 @@ class AutoClickService : AccessibilityService() {
     private val tapQueue = ArrayDeque<Int>()
     private var dispatching = false
 
+    /** Cliques disparados na sessão atual (para o limite de cliques). */
+    private var clickCount = 0L
+
+    /** Motivo de uma parada automática pendente; aplicada quando o toque em curso terminar. */
+    private var pendingStopReason: String? = null
+
+    private val timeLimitRunnable = Runnable { requestStop("Tempo limite atingido") }
+
     // ---------------------------------------------------------------- ciclo de vida
 
     override fun onServiceConnected() {
@@ -246,7 +254,11 @@ class AutoClickService : AccessibilityService() {
         if (targets.isEmpty()) return
         running = true
         dispatching = false
+        clickCount = 0L
+        pendingStopReason = null
         tapQueue.clear()
+        val maxMinutes = Prefs.getMaxMinutes(this)
+        if (maxMinutes > 0) handler.postDelayed(timeLimitRunnable, maxMinutes * 60_000L)
         // Deixa o toque "atravessar" os alvos, senão eles interceptariam os cliques injetados.
         targets.forEach { setTouchable(it, false) }
         playButton?.text = "⏸"
@@ -255,6 +267,8 @@ class AutoClickService : AccessibilityService() {
 
     private fun stopClicking() {
         running = false
+        pendingStopReason = null
+        handler.removeCallbacks(timeLimitRunnable)
         timers.values.forEach { handler.removeCallbacks(it) }
         timers.clear()
         tapQueue.clear()
@@ -276,6 +290,7 @@ class AutoClickService : AccessibilityService() {
     }
 
     private fun enqueueTap(index: Int) {
+        if (pendingStopReason != null) return
         if (index !in tapQueue) tapQueue.addLast(index)
         drainQueue()
     }
@@ -303,12 +318,44 @@ class AutoClickService : AccessibilityService() {
             override fun onCompleted(gestureDescription: GestureDescription?) = onTapFinished()
             override fun onCancelled(gestureDescription: GestureDescription?) = onTapFinished()
         }, handler)
-        if (!accepted) dispatching = false
+        if (!accepted) {
+            dispatching = false
+            return
+        }
+
+        clickCount++
+        val maxClicks = Prefs.getMaxClicks(this)
+        if (maxClicks > 0 && clickCount >= maxClicks) {
+            requestStop("Limite de $maxClicks cliques atingido")
+        }
     }
 
     private fun onTapFinished() {
         dispatching = false
+        val reason = pendingStopReason
+        if (reason != null) {
+            stopWithMessage(reason)
+            return
+        }
         if (running) drainQueue()
+    }
+
+    // ---------------------------------------------------------------- parada automática
+
+    /** Para a sessão; se um toque estiver em curso, espera ele terminar para não cair no alvo. */
+    private fun requestStop(reason: String) {
+        if (!running) return
+        if (dispatching) {
+            pendingStopReason = reason
+        } else {
+            stopWithMessage(reason)
+        }
+    }
+
+    private fun stopWithMessage(reason: String) {
+        val total = clickCount
+        stopClicking()
+        toast("$reason ($total cliques)")
     }
 
     // ---------------------------------------------------------------- utilidades
