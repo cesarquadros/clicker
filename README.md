@@ -6,6 +6,7 @@ Autoclicker para jogos clicker/idle. Mostra um alvo arrastável e um painel flut
 
 - **AccessibilityService** (`AutoClickService`): desenha os overlays com `TYPE_ACCESSIBILITY_OVERLAY` (não precisa da permissão "Sobrepor a outros apps") e injeta os toques com `dispatchGesture()`.
 - **MainActivity**: define o intervalo (ms) e abre as configurações de acessibilidade.
+- Até 8 alvos numerados (**+** / **−** no painel). Cada alvo tem o seu intervalo: na tela inicial use `100,30000` para o alvo 1 a cada 100 ms e o alvo 2 a cada 30 s. Alvos além da lista usam o último valor.
 - Intervalo mínimo: 20 ms (`Prefs.MIN_INTERVAL_MS`).
 
 ## Como compilar e instalar
@@ -15,11 +16,10 @@ Autoclicker para jogos clicker/idle. Mostra um alvo arrastável e um painel flut
 3. No app, toque em **Ativar serviço de acessibilidade** e habilite o AutoClicker.
    - Android 13+ com APK instalado fora da Play Store: se a opção estiver cinza, vá em *Info do app → ⋮ → Permitir configurações restritas*.
 4. Volte ao app, ajuste o intervalo e toque em **Mostrar controles na tela**.
-5. Arraste o círculo vermelho até o ponto desejado, abra o jogo e toque em ▶.
+5. Arraste os círculos numerados até os pontos desejados, abra o jogo e toque em ▶.
 
 ## Limitações
 
-- Funciona com **um** alvo fixo. Para vários pontos ou sequências, dá para estender `performTap()`.
 - Alguns jogos e apps (bancos, por exemplo) bloqueiam toques gerados por serviços de acessibilidade.
 - Muitos jogos proíbem automação nos termos de uso; use por sua conta e risco.
 - O Android só aceita `dispatchGesture` com o serviço ativo; se o sistema o desligar (economia de bateria), reative-o nas configurações.

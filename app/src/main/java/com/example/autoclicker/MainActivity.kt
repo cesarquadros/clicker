@@ -12,11 +12,11 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 
-/** Tela de configuração: intervalo, ativação do serviço e botão para exibir os controles. */
+/** Tela de configuração: intervalos por alvo, ativação do serviço e botão para exibir os controles. */
 class MainActivity : Activity() {
 
     private lateinit var status: TextView
-    private lateinit var intervalInput: EditText
+    private lateinit var intervalsInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,19 +29,22 @@ class MainActivity : Activity() {
 
         status = TextView(this).apply { textSize = 16f }
 
-        val intervalLabel = TextView(this).apply {
-            text = "Intervalo entre cliques (ms, mínimo ${Prefs.MIN_INTERVAL_MS})"
+        val intervalsLabel = TextView(this).apply {
+            text = "Intervalo de cada alvo, em ms, separados por vírgula " +
+                "(mínimo ${Prefs.MIN_INTERVAL_MS}). Ex.: 100,30000 = alvo 1 a cada 100 ms " +
+                "e alvo 2 a cada 30 s. Alvos além da lista usam o último valor."
             textSize = 14f
             setPadding(0, pad, 0, 0)
         }
-        intervalInput = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText(Prefs.getInterval(this@MainActivity).toString())
+        intervalsInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            keyListener = android.text.method.DigitsKeyListener.getInstance("0123456789, ")
+            setText(Prefs.getIntervalsText(this@MainActivity))
             gravity = Gravity.START
         }
         val saveBtn = Button(this).apply {
-            text = "Salvar intervalo"
-            setOnClickListener { saveInterval() }
+            text = "Salvar intervalos"
+            setOnClickListener { saveIntervals() }
         }
 
         val enableBtn = Button(this).apply {
@@ -54,14 +57,14 @@ class MainActivity : Activity() {
         }
 
         val help = TextView(this).apply {
-            text = "Como usar: arraste o círculo vermelho até o ponto que deve ser clicado, " +
-                "abra o jogo e toque em ▶ no painel flutuante. Toque em ⏸ para pausar e " +
-                "arraste o painel pelo ícone ⠿."
+            text = "Como usar: arraste os círculos numerados até os pontos que devem ser " +
+                "clicados (use + e − no painel para adicionar ou remover alvos), abra o jogo e " +
+                "toque em ▶. Toque em ⏸ para pausar e arraste o painel pelo ícone ⠿."
             textSize = 13f
             setPadding(0, pad, 0, 0)
         }
 
-        listOf(status, enableBtn, showBtn, intervalLabel, intervalInput, saveBtn, help)
+        listOf(status, enableBtn, showBtn, intervalsLabel, intervalsInput, saveBtn, help)
             .forEach { root.addView(it) }
         setContentView(root)
     }
@@ -76,14 +79,16 @@ class MainActivity : Activity() {
             "Serviço: ATIVO ✓" else "Serviço: desativado"
     }
 
-    private fun saveInterval() {
-        val ms = intervalInput.text.toString().toLongOrNull()
-        if (ms == null || ms < Prefs.MIN_INTERVAL_MS) {
-            toast("Informe um número a partir de ${Prefs.MIN_INTERVAL_MS} ms")
-            return
+    /** Valida e salva. Retorna false (com aviso) se o texto for inválido. */
+    private fun saveIntervals(): Boolean {
+        val text = intervalsInput.text.toString()
+        if (Prefs.parseIntervals(text) == null) {
+            toast("Use números separados por vírgula, cada um a partir de ${Prefs.MIN_INTERVAL_MS} ms")
+            return false
         }
-        Prefs.setInterval(this, ms)
-        toast("Intervalo salvo: $ms ms")
+        Prefs.setIntervalsText(this, text)
+        toast("Intervalos salvos")
+        return true
     }
 
     private fun showControls() {
@@ -92,7 +97,7 @@ class MainActivity : Activity() {
             toast("Ative o serviço de acessibilidade primeiro")
             return
         }
-        saveInterval()
+        if (!saveIntervals()) return
         service.showOverlay()
         moveTaskToBack(true)
     }
