@@ -7,6 +7,7 @@ Autoclicker para jogos clicker/idle. Mostra um alvo arrastável e um painel flut
 - **AccessibilityService** (`AutoClickService`): desenha os overlays com `TYPE_ACCESSIBILITY_OVERLAY` (não precisa da permissão "Sobrepor a outros apps") e injeta os toques com `dispatchGesture()`.
 - **MainActivity**: define o intervalo (ms) e abre as configurações de acessibilidade.
 - Até 8 alvos numerados (**+** / **−** no painel). Cada alvo tem o seu intervalo: na tela inicial use `100,30000` para o alvo 1 a cada 100 ms e o alvo 2 a cada 30 s. Alvos além da lista usam o último valor.
+- Parada automática: limite de cliques e/ou de minutos na tela inicial (0 = sem limite). Vale o que ocorrer primeiro.
 - Intervalo mínimo: 20 ms (`Prefs.MIN_INTERVAL_MS`).
 
 ## Como compilar e instalar

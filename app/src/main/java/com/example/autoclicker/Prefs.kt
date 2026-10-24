@@ -7,6 +7,8 @@ object Prefs {
     private const val FILE = "autoclicker_prefs"
     private const val KEY_INTERVALS = "intervals_ms"
     private const val KEY_INTERVAL_LEGACY = "interval_ms"
+    private const val KEY_MAX_CLICKS = "max_clicks"
+    private const val KEY_MAX_MINUTES = "max_minutes"
 
     const val DEFAULT_INTERVAL_MS = 100L
     const val MIN_INTERVAL_MS = 20L
@@ -34,6 +36,19 @@ object Prefs {
 
     fun getIntervals(ctx: Context): List<Long> =
         parseIntervals(getIntervalsText(ctx)) ?: listOf(DEFAULT_INTERVAL_MS)
+
+    /** Limite de cliques por sessão (0 = sem limite). */
+    fun getMaxClicks(ctx: Context): Long = prefs(ctx).getLong(KEY_MAX_CLICKS, 0L)
+
+    /** Limite de tempo por sessão, em minutos (0 = sem limite). */
+    fun getMaxMinutes(ctx: Context): Long = prefs(ctx).getLong(KEY_MAX_MINUTES, 0L)
+
+    fun setLimits(ctx: Context, maxClicks: Long, maxMinutes: Long) {
+        prefs(ctx).edit()
+            .putLong(KEY_MAX_CLICKS, maxClicks.coerceAtLeast(0L))
+            .putLong(KEY_MAX_MINUTES, maxMinutes.coerceAtLeast(0L))
+            .apply()
+    }
 
     /** Intervalo do alvo de posição [index]; alvos além da lista usam o último valor. */
     fun intervalFor(ctx: Context, index: Int): Long {

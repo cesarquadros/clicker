@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.autoclicker"
         minSdk = 24 // dispatchGesture() exige API 24+
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     // Keystore fixa: todas as builds (inclusive as do GitHub Actions) usam a mesma
