@@ -11,9 +11,14 @@ object Prefs {
     private const val KEY_MAX_MINUTES = "max_minutes"
     private const val KEY_TARGETS = "target_positions"
     private const val KEY_PANEL = "panel_position"
+    private const val KEY_SWIPE_MS = "swipe_ms"
 
     const val DEFAULT_INTERVAL_MS = 100L
     const val MIN_INTERVAL_MS = 20L
+
+    const val DEFAULT_SWIPE_MS = 300L
+    const val MIN_SWIPE_MS = 50L
+    const val MAX_SWIPE_MS = 5000L
 
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -54,27 +59,47 @@ object Prefs {
 
     // ------------------------------------------------------------ posições salvas
 
+    /** Alvo salvo: toque (x, y) ou deslize (x, y) até (x2, y2). */
+    data class SavedTarget(
+        val swipe: Boolean,
+        val x: Int,
+        val y: Int,
+        val x2: Int = 0,
+        val y2: Int = 0
+    )
+
     /**
-     * Posições (x, y) dos alvos, na ordem. Formato salvo: "T,x,y;T,x,y".
-     * O prefixo "T" (toque) deixa espaço para outros tipos de alvo no futuro.
+     * Alvos salvos, na ordem. Formato: "T,x,y" (toque) e "S,x,y,x2,y2" (deslize),
+     * separados por ";".
      */
-    fun getTargetPositions(ctx: Context): List<Pair<Int, Int>> {
+    fun getSavedTargets(ctx: Context): List<SavedTarget> {
         val raw = prefs(ctx).getString(KEY_TARGETS, "") ?: ""
         return raw.split(';').mapNotNull { item ->
             val p = item.split(',')
-            if (p.size == 3 && p[0] == "T") {
-                val x = p[1].toIntOrNull()
-                val y = p[2].toIntOrNull()
-                if (x != null && y != null) x to y else null
-            } else {
-                null
+            val n = p.drop(1).map { it.toIntOrNull() }
+            when {
+                p.size == 3 && p[0] == "T" && n.none { it == null } ->
+                    SavedTarget(false, n[0]!!, n[1]!!)
+                p.size == 5 && p[0] == "S" && n.none { it == null } ->
+                    SavedTarget(true, n[0]!!, n[1]!!, n[2]!!, n[3]!!)
+                else -> null
             }
         }
     }
 
-    fun setTargetPositions(ctx: Context, positions: List<Pair<Int, Int>>) {
-        val raw = positions.joinToString(";") { "T,${it.first},${it.second}" }
+    fun setSavedTargets(ctx: Context, targets: List<SavedTarget>) {
+        val raw = targets.joinToString(";") {
+            if (it.swipe) "S,${it.x},${it.y},${it.x2},${it.y2}" else "T,${it.x},${it.y}"
+        }
         prefs(ctx).edit().putString(KEY_TARGETS, raw).apply()
+    }
+
+    /** Duração do deslize, em ms. */
+    fun getSwipeDuration(ctx: Context): Long =
+        prefs(ctx).getLong(KEY_SWIPE_MS, DEFAULT_SWIPE_MS).coerceIn(MIN_SWIPE_MS, MAX_SWIPE_MS)
+
+    fun setSwipeDuration(ctx: Context, ms: Long) {
+        prefs(ctx).edit().putLong(KEY_SWIPE_MS, ms.coerceIn(MIN_SWIPE_MS, MAX_SWIPE_MS)).apply()
     }
 
     fun getPanelPosition(ctx: Context): Pair<Int, Int>? {

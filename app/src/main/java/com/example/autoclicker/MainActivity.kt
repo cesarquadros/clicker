@@ -20,6 +20,7 @@ class MainActivity : Activity() {
     private lateinit var intervalsInput: EditText
     private lateinit var maxClicksInput: EditText
     private lateinit var maxMinutesInput: EditText
+    private lateinit var swipeDurationInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,6 +65,17 @@ class MainActivity : Activity() {
             if (v > 0) setText(v.toString())
         }
 
+        val swipeLabel = TextView(this).apply {
+            text = "Duração do deslize, em ms (${Prefs.MIN_SWIPE_MS} a ${Prefs.MAX_SWIPE_MS}). " +
+                "Menor = deslize mais rápido."
+            textSize = 14f
+            setPadding(0, pad, 0, 0)
+        }
+        swipeDurationInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(Prefs.getSwipeDuration(this@MainActivity).toString())
+        }
+
         val saveBtn = Button(this).apply {
             text = "Salvar configurações"
             setOnClickListener { saveSettings() }
@@ -85,8 +97,10 @@ class MainActivity : Activity() {
 
         val help = TextView(this).apply {
             text = "Como usar: arraste os círculos numerados até os pontos que devem ser " +
-                "clicados (use + e − no painel para adicionar ou remover alvos), abra o jogo e " +
-                "toque em ▶. Toque em ⏸ para pausar e arraste o painel pelo ícone ⠿."
+                "clicados (use + para alvo de toque, ↔ para alvo de deslize e − para remover " +
+                "o último). No deslize, o círculo cheio é o início e o tracejado ('fim') é o " +
+                "ponto final. Abra o jogo e toque em ▶. Toque em ⏸ para pausar e arraste o " +
+                "painel pelo ícone ⠿."
             textSize = 13f
             setPadding(0, pad, 0, 0)
         }
@@ -94,6 +108,7 @@ class MainActivity : Activity() {
         listOf(
             status, enableBtn, showBtn,
             intervalsLabel, intervalsInput,
+            swipeLabel, swipeDurationInput,
             limitsLabel, maxClicksInput, maxMinutesInput,
             saveBtn, resetBtn, help
         ).forEach { root.addView(it) }
@@ -137,8 +152,14 @@ class MainActivity : Activity() {
             toast("Os limites devem ser números inteiros")
             return false
         }
+        val swipeMs = swipeDurationInput.text.toString().trim().toLongOrNull()
+        if (swipeMs == null || swipeMs !in Prefs.MIN_SWIPE_MS..Prefs.MAX_SWIPE_MS) {
+            toast("A duração do deslize deve ficar entre ${Prefs.MIN_SWIPE_MS} e ${Prefs.MAX_SWIPE_MS} ms")
+            return false
+        }
         Prefs.setIntervalsText(this, text)
         Prefs.setLimits(this, maxClicks, maxMinutes)
+        Prefs.setSwipeDuration(this, swipeMs)
         toast("Configurações salvas")
         return true
     }

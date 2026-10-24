@@ -23,13 +23,19 @@ import kotlin.math.abs
 /**
  * Serviço de acessibilidade que:
  *  1. desenha overlays: um painel de controle e vários alvos numerados que você
- *     arrasta até os pontos a serem clicados;
- *  2. executa toques repetidos no centro de cada alvo via dispatchGesture(),
+ *     arrasta até os pontos a serem clicados (alvos de deslize têm um 2º marcador, o fim);
+ *  2. executa toques ou deslizes repetidos via dispatchGesture(),
  *     cada alvo com o seu próprio intervalo (ver [Prefs.intervalFor]).
  */
 class AutoClickService : AccessibilityService() {
 
-    private class Target(val view: TextView, val params: WindowManager.LayoutParams)
+    private class Target(
+        val view: TextView,
+        val params: WindowManager.LayoutParams,
+        /** Só em alvos de deslize: marcador do ponto final. */
+        val endView: TextView? = null,
+        val endParams: WindowManager.LayoutParams? = null
+    )
 
     private lateinit var wm: WindowManager
     private val handler = Handler(Looper.getMainLooper())
@@ -82,17 +88,24 @@ class AutoClickService : AccessibilityService() {
     fun showOverlay() {
         if (panel != null || !::wm.isInitialized) return
         // Restaura os alvos salvos; sem nada salvo, começa com um alvo no centro.
-        val saved = Prefs.getTargetPositions(this)
+        val saved = Prefs.getSavedTargets(this)
         if (saved.isEmpty()) {
-            addTarget()
+            addTarget(swipe = false)
         } else {
-            saved.take(MAX_TARGETS).forEach { addTarget(it) }
+            saved.take(MAX_TARGETS).forEach { addTarget(it.swipe, it) }
         }
         showPanel()
     }
 
     private fun savePositions() {
-        Prefs.setTargetPositions(this, targets.map { it.params.x to it.params.y })
+        Prefs.setSavedTargets(this, targets.map { t ->
+            val end = t.endParams
+            if (end != null) {
+                Prefs.SavedTarget(true, t.params.x, t.params.y, end.x, end.y)
+            } else {
+                Prefs.SavedTarget(false, t.params.x, t.params.y)
+            }
+        })
     }
 
     private fun savePanelPosition() {
@@ -104,7 +117,10 @@ class AutoClickService : AccessibilityService() {
     fun hideOverlay() {
         stopClicking()
         panel?.let { runCatching { wm.removeView(it) } }
-        targets.forEach { t -> runCatching { wm.removeView(t.view) } }
+        targets.forEach { t ->
+            runCatching { wm.removeView(t.view) }
+            t.endView?.let { v -> runCatching { wm.removeView(v) } }
+        }
         panel = null
         playButton = null
         targets.clear()
@@ -124,8 +140,11 @@ class AutoClickService : AccessibilityService() {
             this.y = y
         }
 
-    /** Adiciona um alvo; [saved] é a posição (x, y) guardada, ou null para a posição padrão. */
-    private fun addTarget(saved: Pair<Int, Int>? = null) {
+    /**
+     * Adiciona um alvo de toque ou de deslize (início + fim). [saved] traz as posições
+     * guardadas, ou null para usar as posições padrão.
+     */
+    private fun addTarget(swipe: Boolean, saved: Prefs.SavedTarget? = null) {
         if (targets.size >= MAX_TARGETS) {
             toast("Máximo de $MAX_TARGETS alvos")
             return
@@ -133,30 +152,55 @@ class AutoClickService : AccessibilityService() {
         val index = targets.size
         val size = dp(52)
         val color = TARGET_COLORS[index % TARGET_COLORS.size]
+        val dm = resources.displayMetrics
 
-        val view = TextView(this).apply {
-            text = (index + 1).toString()
-            textSize = 16f
+        val view = markerView((index + 1).toString(), 16f, color, dashed = false)
+        // Mantém o alvo dentro da tela, caso a resolução/orientação tenha mudado.
+        val x = saved?.let { clampX(it.x, size) } ?: (dm.widthPixels / 2 - size / 2)
+        val y = saved?.let { clampY(it.y, size) } ?: (dm.heightPixels / 3 + index * dp(64))
+        val params = overlayParams(size, size, x, y)
+        attachDrag(view, params, onDragEnd = { savePositions() })
+        wm.addView(view, params)
+
+        if (!swipe) {
+            targets.add(Target(view, params))
+            return
+        }
+
+        // Deslize: segundo marcador (tracejado) para o ponto final.
+        val endSize = dp(44)
+        val endView = markerView("${index + 1}\nfim", 10f, color, dashed = true)
+        val ex = saved?.let { clampX(it.x2, endSize) } ?: clampX(x + dp(110), endSize)
+        val ey = saved?.let { clampY(it.y2, endSize) } ?: clampY(y, endSize)
+        val endParams = overlayParams(endSize, endSize, ex, ey)
+        attachDrag(endView, endParams, onDragEnd = { savePositions() })
+        wm.addView(endView, endParams)
+        targets.add(Target(view, params, endView, endParams))
+    }
+
+    private fun markerView(label: String, textSizeSp: Float, color: Int, dashed: Boolean) =
+        TextView(this).apply {
+            text = label
+            textSize = textSizeSp
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.argb(90, Color.red(color), Color.green(color), Color.blue(color)))
-                setStroke(dp(3), color)
+                if (dashed) {
+                    setStroke(dp(3), color, dp(4).toFloat(), dp(3).toFloat())
+                } else {
+                    setStroke(dp(3), color)
+                }
             }
         }
-        val dm = resources.displayMetrics
-        // Mantém o alvo dentro da tela, caso a resolução/orientação tenha mudado.
-        val x = saved?.first?.coerceIn(0, (dm.widthPixels - size).coerceAtLeast(0))
-            ?: (dm.widthPixels / 2 - size / 2)
-        val y = saved?.second?.coerceIn(0, (dm.heightPixels - size).coerceAtLeast(0))
-            ?: (dm.heightPixels / 3 + index * dp(64))
-        val params = overlayParams(size, size, x, y)
-        attachDrag(view, params, onDragEnd = { savePositions() })
-        wm.addView(view, params)
-        targets.add(Target(view, params))
-    }
+
+    private fun clampX(x: Int, size: Int) =
+        x.coerceIn(0, (resources.displayMetrics.widthPixels - size).coerceAtLeast(0))
+
+    private fun clampY(y: Int, size: Int) =
+        y.coerceIn(0, (resources.displayMetrics.heightPixels - size).coerceAtLeast(0))
 
     private fun removeLastTarget() {
         if (running) {
@@ -166,6 +210,7 @@ class AutoClickService : AccessibilityService() {
         if (targets.size <= 1) return
         val last = targets.removeAt(targets.lastIndex)
         runCatching { wm.removeView(last.view) }
+        last.endView?.let { v -> runCatching { wm.removeView(v) } }
         savePositions()
     }
 
@@ -192,11 +237,12 @@ class AutoClickService : AccessibilityService() {
         val handle = button("⠿")
         val play = button("▶")
         val add = button("+")
+        val addSwipe = button("↔")
         val remove = button("−")
         val close = button("✕", 18)
         playButton = play
 
-        listOf(handle, play, add, remove, close).forEach { bar.addView(it) }
+        listOf(handle, play, add, addSwipe, remove, close).forEach { bar.addView(it) }
 
         val dm = resources.displayMetrics
         val savedPanel = Prefs.getPanelPosition(this)
@@ -212,7 +258,15 @@ class AutoClickService : AccessibilityService() {
             if (running) {
                 toast("Pause antes de adicionar alvos")
             } else {
-                addTarget()
+                addTarget(swipe = false)
+                savePositions()
+            }
+        }
+        addSwipe.setOnClickListener {
+            if (running) {
+                toast("Pause antes de adicionar alvos")
+            } else {
+                addTarget(swipe = true)
                 savePositions()
             }
         }
@@ -273,12 +327,19 @@ class AutoClickService : AccessibilityService() {
     // ---------------------------------------------------------------- cliques
 
     private fun setTouchable(t: Target, touchable: Boolean) {
-        t.params.flags = if (touchable) {
-            t.params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        setViewTouchable(t.view, t.params, touchable)
+        val endView = t.endView
+        val endParams = t.endParams
+        if (endView != null && endParams != null) setViewTouchable(endView, endParams, touchable)
+    }
+
+    private fun setViewTouchable(v: View, p: WindowManager.LayoutParams, touchable: Boolean) {
+        p.flags = if (touchable) {
+            p.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         } else {
-            t.params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            p.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
-        runCatching { wm.updateViewLayout(t.view, t.params) }
+        runCatching { wm.updateViewLayout(v, p) }
     }
 
     private fun startClicking() {
@@ -341,7 +402,16 @@ class AutoClickService : AccessibilityService() {
         val y = loc[1] + target.view.height / 2f
 
         val path = Path().apply { moveTo(x, y) }
-        val stroke = GestureDescription.StrokeDescription(path, 0, 20)
+        var duration = TAP_DURATION_MS
+        val endView = target.endView
+        if (endView != null) {
+            // Deslize: do centro do marcador inicial até o centro do marcador final.
+            val endLoc = IntArray(2)
+            endView.getLocationOnScreen(endLoc)
+            path.lineTo(endLoc[0] + endView.width / 2f, endLoc[1] + endView.height / 2f)
+            duration = Prefs.getSwipeDuration(this)
+        }
+        val stroke = GestureDescription.StrokeDescription(path, 0, duration)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
         dispatching = true
@@ -398,6 +468,7 @@ class AutoClickService : AccessibilityService() {
 
     companion object {
         private const val MAX_TARGETS = 8
+        private const val TAP_DURATION_MS = 20L
 
         private val TARGET_COLORS = intArrayOf(
             Color.rgb(255, 59, 48),   // vermelho
